@@ -144,6 +144,7 @@ class TempleSafetyService:
         safety_policy = self.repository.effective_safety_policy(temple["id"], now)
         rules = json.loads(safety_policy["rules_json"]) if safety_policy else DEFAULT_RULES
         decision = judge_quality(payload, dict(app), rules)
+        incident_created = False
         with transaction(immediate=True) as connection:
             cursor = connection.execute(
                 "INSERT INTO incense_observations(observation_key,temple_id,hall_id,incense_profile_id,steward_hash,sensor_class,visitor_density,pm25_ugm3,co_ppm,supply_airflow,exhaust_airflow,observed_at,received_at,payload_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -156,7 +157,12 @@ class TempleSafetyService:
                     (cursor.lastrowid, temple["id"], hall["id"] if hall else None, app["id"], decision.severity, json.dumps(decision.as_dict(), ensure_ascii=False, sort_keys=True), now),
                 )
                 safety_incident_id = safety_incident.lastrowid
-            return {"observation_id": cursor.lastrowid, "safety_incident_id": safety_incident_id, "quality": decision.as_dict()}
+                incident_created = True
+        if incident_created:
+            # 适用殿堂出现新的未解决隐患时，进行中的施工许可必须自动挂起
+            from app.temple.permits import WorkPermitService
+            WorkPermitService(self.connection, self.clock).refresh_permits("safety-incident-guardian")
+        return {"observation_id": cursor.lastrowid, "safety_incident_id": safety_incident_id, "quality": decision.as_dict()}
 
     def ingest_batch(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         results = []

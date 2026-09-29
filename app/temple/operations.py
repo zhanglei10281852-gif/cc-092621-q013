@@ -171,6 +171,10 @@ class TempleRestorationService:
                 connection.execute("UPDATE hall_closure_windows SET state='completed',updated_at=? WHERE id=?", (now, window["id"]))
                 self._event(connection, "closure", window["id"], "completed", actor, {}, now)
                 completed.append(window["id"])
+        if activated or completed:
+            # 封闭生效会恢复部分前置条件、封闭结束会使前置条件失效，重评进行中的施工许可
+            from app.temple.permits import WorkPermitService
+            WorkPermitService(self.connection, self.clock).refresh_permits("closure-scheduler")
         return {"activated": activated, "completed": completed}
 
     def blocks_new_mitigation_session(self, temple_id: int, hall_id: int | None, now: str) -> dict[str, Any] | None:

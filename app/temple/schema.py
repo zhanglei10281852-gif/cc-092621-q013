@@ -199,6 +199,79 @@ CREATE TABLE IF NOT EXISTS restoration_events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_restoration_events_resource ON restoration_events(resource_type,resource_id,id);
+CREATE TABLE IF NOT EXISTS work_permit_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_type TEXT NOT NULL UNIQUE CHECK(work_type IN ('timber_repair','temporary_power','hot_work')),
+    name TEXT NOT NULL,
+    risk_items_json TEXT NOT NULL,
+    required_monitors_json TEXT NOT NULL,
+    requires_hall_closure INTEGER NOT NULL DEFAULT 1 CHECK(requires_hall_closure IN (0,1)),
+    blocks_incense_hours INTEGER NOT NULL DEFAULT 1 CHECK(blocks_incense_hours IN (0,1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dharma_services (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temple_id INTEGER NOT NULL REFERENCES temple_sites(id) ON DELETE CASCADE,
+    hall_id INTEGER REFERENCES worship_halls(id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'scheduled' CHECK(state IN ('scheduled','cancelled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(temple_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_dharma_services_window ON dharma_services(temple_id,hall_id,state,starts_at,ends_at);
+CREATE TABLE IF NOT EXISTS work_permits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temple_id INTEGER NOT NULL REFERENCES temple_sites(id),
+    code TEXT NOT NULL UNIQUE,
+    work_type TEXT NOT NULL CHECK(work_type IN ('timber_repair','temporary_power','hot_work')),
+    name TEXT NOT NULL,
+    template_id INTEGER NOT NULL REFERENCES work_permit_templates(id),
+    risk_items_json TEXT NOT NULL,
+    required_monitors_json TEXT NOT NULL,
+    shift_date TEXT NOT NULL,
+    shift_label TEXT NOT NULL,
+    shift_tz TEXT NOT NULL,
+    shift_start TEXT NOT NULL,
+    shift_end TEXT NOT NULL,
+    responsible_party TEXT NOT NULL,
+    issued_by TEXT NOT NULL DEFAULT '',
+    issued_at TEXT,
+    state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','issued','in_progress','suspended','auto_suspended','completed','revoked')),
+    suspension_reason TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_work_permits_state ON work_permits(temple_id,state,shift_start,shift_end);
+CREATE TABLE IF NOT EXISTS work_permit_halls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    hall_id INTEGER NOT NULL REFERENCES worship_halls(id),
+    UNIQUE(work_permit_id, hall_id)
+);
+CREATE TABLE IF NOT EXISTS work_permit_signoffs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    signed_at TEXT NOT NULL,
+    UNIQUE(work_permit_id, role)
+);
+CREATE INDEX IF NOT EXISTS idx_work_permit_signoffs ON work_permit_signoffs(work_permit_id,id);
+CREATE TABLE IF NOT EXISTS work_permit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    detail_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_work_permit_events ON work_permit_events(work_permit_id,id);
 '''
 
 
