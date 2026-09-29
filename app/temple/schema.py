@@ -199,6 +199,107 @@ CREATE TABLE IF NOT EXISTS restoration_events (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_restoration_events_resource ON restoration_events(resource_type,resource_id,id);
+CREATE TABLE IF NOT EXISTS ceremony_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temple_id INTEGER NOT NULL REFERENCES temple_sites(id),
+    hall_id INTEGER REFERENCES worship_halls(id),
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'scheduled' CHECK(state IN ('scheduled','active','completed','cancelled')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ceremony_active ON ceremony_schedules(temple_id,state,starts_at,ends_at);
+CREATE TABLE IF NOT EXISTS work_permits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    temple_id INTEGER NOT NULL REFERENCES temple_sites(id),
+    code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    work_type TEXT NOT NULL CHECK(work_type IN ('timber_repair','temporary_power','hot_work')),
+    restoration_campaign_id INTEGER REFERENCES restoration_campaigns(id),
+    catalog_version TEXT NOT NULL,
+    risk_items_json TEXT NOT NULL,
+    required_attendant_roles_json TEXT NOT NULL,
+    required_signoff_roles_json TEXT NOT NULL,
+    blocking_incident_severities_json TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'draft' CHECK(state IN ('draft','issued','active','suspended','completed','revoked')),
+    suspend_kind TEXT NOT NULL DEFAULT '' CHECK(suspend_kind IN ('','manual','auto')),
+    suspend_reasons_json TEXT NOT NULL DEFAULT '[]',
+    valid_from TEXT NOT NULL,
+    valid_until TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    issued_by TEXT,
+    issued_at TEXT,
+    last_event_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_work_permits_state ON work_permits(state,valid_from,valid_until);
+CREATE TABLE IF NOT EXISTS work_permit_halls (
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    hall_id INTEGER NOT NULL REFERENCES worship_halls(id),
+    PRIMARY KEY(work_permit_id, hall_id)
+);
+CREATE TABLE IF NOT EXISTS work_permit_shifts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    shift_code TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    ends_at TEXT NOT NULL,
+    UNIQUE(work_permit_id, seq)
+);
+CREATE TABLE IF NOT EXISTS work_permit_responsibles (
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    person TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    PRIMARY KEY(work_permit_id, person)
+);
+CREATE TABLE IF NOT EXISTS work_permit_attendants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    person TEXT NOT NULL,
+    attendant_role TEXT NOT NULL CHECK(attendant_role IN ('safety_monitor','fire_watch','electrician')),
+    checked_in_at TEXT,
+    checked_out_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(work_permit_id, person, attendant_role)
+);
+CREATE TABLE IF NOT EXISTS work_permit_signoffs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    signoff_role TEXT NOT NULL CHECK(signoff_role IN ('safety_officer','fire_warden','electrician')),
+    signer TEXT NOT NULL,
+    signed_at TEXT NOT NULL,
+    UNIQUE(work_permit_id, signoff_role, signer)
+);
+CREATE TABLE IF NOT EXISTS work_permit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_permit_id INTEGER NOT NULL REFERENCES work_permits(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    event_type TEXT NOT NULL CHECK(event_type IN (
+        'created','signoff','issued','work_started','paused','resumed',
+        'auto_suspended','work_completed','revoked'
+    )),
+    actor TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    detail_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    UNIQUE(work_permit_id, seq)
+);
+CREATE INDEX IF NOT EXISTS idx_work_permit_events ON work_permit_events(work_permit_id,id);
+CREATE TRIGGER IF NOT EXISTS work_permit_events_no_update BEFORE UPDATE ON work_permit_events
+BEGIN
+    SELECT RAISE(ABORT, '施工许可时间线不可修改');
+END;
+CREATE TRIGGER IF NOT EXISTS work_permit_events_no_delete BEFORE DELETE ON work_permit_events
+BEGIN
+    SELECT RAISE(ABORT, '施工许可时间线不可删除');
+END;
 '''
 
 
